@@ -26,6 +26,7 @@ import {
   type SongRecord,
 } from "@/lib/organizer"
 import { apiSongDeps } from "@/lib/organizer/api-deps"
+import type { SongCandidate } from "@/lib/song-sources"
 import {
   createIdbStorage,
   describeSession,
@@ -44,6 +45,11 @@ type Screen = "folder" | "progress" | "results"
 type Picked<T> = { name: string; folder: T; handle: DirectoryHandleLike }
 type InputPick = Picked<InputFolder> & { entries: Mp3Entry[] }
 type PickerWindow = Parameters<typeof pickDirectory>[0]
+type CandidateSelection = {
+  candidates: SongCandidate[]
+  fileName?: string
+  outcome?: Extract<SongOutcome, { status: "ok" }>
+}
 
 const missingEntry = (name: string): Mp3Entry => ({
   name,
@@ -66,6 +72,7 @@ export function OrganizerApp() {
   const [output, setOutput] = useState<Picked<OutputFolder> | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [records, setRecords] = useState<SongRecord[]>([])
+  const [candidateSelections, setCandidateSelections] = useState<Record<number, CandidateSelection>>({})
   const [processed, setProcessed] = useState<SongRecord[]>([])
   const [total, setTotal] = useState(0)
   const [current, setCurrent] = useState<string | null>(null)
@@ -143,6 +150,7 @@ export function OrganizerApp() {
     if (!input || !output) return
     outputRef.current = output.folder
     setLaterClicked(true)
+    setCandidateSelections({})
     sessionRef.current = {
       version: 1,
       input: { name: input.name, handle: input.handle },
@@ -189,6 +197,7 @@ export function OrganizerApp() {
     outputRef.current = outFolder
     sessionRef.current = { ...saved, records: [...saved.records] }
     setLaterClicked(true)
+    setCandidateSelections({})
 
     if (mode === "review") {
       setRecords(restored)
@@ -214,6 +223,7 @@ export function OrganizerApp() {
     setInput(null)
     setOutput(null)
     setRecords([])
+    setCandidateSelections({})
     setProcessed([])
     setFinished(false)
     setMessage(null)
@@ -222,28 +232,117 @@ export function OrganizerApp() {
 
   function actionsFor(index: number, setNotice: (text: string | null) => void): DetailActions {
     const out = outputRef.current
-    const apply = (outcome: SongOutcome) => {
+    const apply = (outcome: SongOutcome, persistResult = true) => {
       const next = records.map((r, i) => (i === index ? { ...r, outcome } : r))
       setRecords(next)
-      persist(next)
+      if (persistResult) persist(next)
       setNotice(
         outcome.status === "ok" ? `${outcome.fileName} 을(를) 저장할 폴더에 저장했습니다.` : null
       )
     }
     const entry = records[index]?.entry
+    const selection = candidateSelections[index]
     return {
       choose: async (candidate) => {
-        if (out) apply(await chooseCandidate(entry, out, deps, candidate))
+        if (!out) return
+        const current = records[index]?.outcome
+        const candidates =
+          current?.status === "review" && current.kind === "candidates"
+            ? current.candidates
+            : selection?.candidates
+        const outcome = await chooseCandidate(entry, out, deps, candidate, selection?.fileName)
+        if (outcome.status === "ok" && candidates) {
+          setCandidateSelections((all) => ({
+            ...all,
+            [index]: { candidates, fileName: outcome.fileName, outcome },
+          }))
+        } else if (outcome.status === "review" && outcome.kind === "conflict" && candidates) {
+          setCandidateSelections((all) => ({
+            ...all,
+            [index]: { ...(selection ?? {}), candidates },
+          }))
+        } else if (selection?.outcome) {
+          apply(selection.outcome)
+          setNotice(
+            outcome.status === "skipped"
+              ? "이미 같은 이름의 파일이 있어 기존 선택을 유지했습니다."
+              : "새 후보를 적용하지 못해 기존 선택을 유지했습니다."
+          )
+          return
+        }
+        apply(outcome, !(selection?.fileName && outcome.status === "review"))
       },
       resolve: async (candidate, choices) => {
-        if (out) apply(await resolveConflicts(entry, out, deps, candidate, choices))
+        if (!out) return
+        const outcome = await resolveConflicts(
+          entry,
+          out,
+          deps,
+          candidate,
+          choices,
+          selection?.fileName
+        )
+        if (outcome.status === "ok" && selection) {
+          setCandidateSelections((all) => ({
+            ...all,
+            [index]: { ...selection, fileName: outcome.fileName, outcome },
+          }))
+        } else if (selection?.outcome && outcome.status !== "ok") {
+          apply(selection.outcome)
+          setNotice(
+            outcome.status === "skipped"
+              ? "이미 같은 이름의 파일이 있어 기존 선택을 유지했습니다."
+              : "새 후보를 적용하지 못해 기존 선택을 유지했습니다."
+          )
+          return
+        }
+        apply(outcome, !(selection?.fileName && outcome.status === "review"))
       },
       retry: async (hint) => {
         if (out) apply(await processSong(entry, out, deps, hint))
       },
       save: async (values, artworkUrl) => {
-        if (out) apply(await saveManual(entry, out, deps, values, artworkUrl))
+        if (!out) return false
+        const previous = records[index]?.outcome
+        const outcome = await saveManual(
+          entry,
+          out,
+          deps,
+          values,
+          artworkUrl,
+          previous?.status === "ok" ? previous.fileName : undefined
+        )
+        if (previous?.status === "ok" && outcome.status !== "ok") {
+          setNotice(
+            outcome.status === "skipped"
+              ? "같은 이름의 파일이 이미 있어 기존 결과를 유지했습니다."
+              : "편집 내용을 저장하지 못해 기존 결과를 유지했습니다."
+          )
+          return false
+        }
+        apply(outcome)
+        return outcome.status === "ok"
       },
+      ...(selection
+        ? {
+            reselect: async () => {
+              const next = records.map((record, i) =>
+                i === index
+                  ? {
+                      ...record,
+                      outcome: {
+                        status: "review" as const,
+                        kind: "candidates" as const,
+                        candidates: selection.candidates,
+                      },
+                    }
+                  : record
+              )
+              setRecords(next)
+              setNotice(null)
+            },
+          }
+        : {}),
     }
   }
 

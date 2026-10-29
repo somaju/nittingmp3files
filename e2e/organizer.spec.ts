@@ -38,6 +38,9 @@ async function installFakeFolders(page: Page, inputFiles: string[]) {
           }),
         };
       },
+      async removeEntry(fileName: string) {
+        if (!store[name].delete(fileName)) throw new DOMException("not found", "NotFoundError");
+      },
       queryPermission: async () => "granted",
       requestPermission: async () => "granted",
       isSameEntry: async (other: { name: string }) => other.name === name,
@@ -137,6 +140,17 @@ test("폴더를 골라 정리하고 결과를 확인하고 처리하지 못한 �
   await page.getByTestId("song-row").filter({ hasText: "푸른 새벽 - 하늘고래.mp3" }).click();
   await expect(page.getByTestId("detail-name")).toHaveText("푸른 새벽 - 하늘고래.mp3");
   await expect(page.getByTestId("lyrics")).toContainText("첫 줄");
+  await page.getByTestId("edit-mode").click();
+  await page.getByLabel("제목", { exact: true }).fill("푸른 새벽 편집");
+  await page.getByLabel("앨범", { exact: true }).fill("새 앨범");
+  await page.getByTestId("manual-save").click();
+  await expect(page.getByTestId("detail-name")).toHaveText("푸른 새벽 편집 - 하늘고래.mp3");
+  expect(await page.evaluate(() => (window as never as { __fake: { outputNames(): string[] } }).__fake.outputNames())).toContain(
+    "푸른 새벽 편집 - 하늘고래.mp3",
+  );
+  expect(await page.evaluate(() => (window as never as { __fake: { outputNames(): string[] } }).__fake.outputNames())).not.toContain(
+    "푸른 새벽 - 하늘고래.mp3",
+  );
 
   // 후보 선택
   await page.getByRole("tab", { name: "확인 필요 1" }).click();
@@ -147,6 +161,14 @@ test("폴더를 골라 정리하고 결과를 확인하고 처리하지 못한 �
   await expect
     .poll(() => page.evaluate(() => (window as never as { __fake: { outputNames(): string[] } }).__fake.outputNames().length))
     .toBe(2);
+
+  await page.getByRole("button", { name: "후보 다시 선택" }).click();
+  await expect(page.getByTestId("candidates")).toBeVisible();
+  await page.getByRole("button", { name: "이 곡으로 정리" }).last().click();
+  await expect(page.getByTestId("notice")).toContainText("저장했습니다");
+  await expect
+    .poll(() => page.evaluate(() => (window as never as { __fake: { outputNames(): string[] } }).__fake.outputNames().sort()))
+    .toEqual(["소금 호수 (Remastered) - 파도소리.mp3", "푸른 새벽 편집 - 하늘고래.mp3"]);
 
   // 처리 못함: 제목 입력 후 다시 검색
   await page.getByRole("tab", { name: "처리 못함 2" }).click();

@@ -50,11 +50,11 @@ export function ResultsScreen({ records, actionsFor }: Props) {
   const current = records[selected]
 
   const base = actionsFor(selected, (text) => setNotices((n) => ({ ...n, [selected]: text })))
-  const wrap = <A extends unknown[]>(fn: (...args: A) => Promise<void>) =>
-    async (...args: A) => {
+  const wrap = <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R> => {
       setBusy(true)
       try {
-        await fn(...args)
+        return await fn(...args)
       } finally {
         setBusy(false)
       }
@@ -64,6 +64,7 @@ export function ResultsScreen({ records, actionsFor }: Props) {
     resolve: wrap(base.resolve),
     retry: wrap(base.retry),
     save: wrap(base.save),
+    ...(base.reselect ? { reselect: wrap(base.reselect) } : {}),
   }
 
   return (
