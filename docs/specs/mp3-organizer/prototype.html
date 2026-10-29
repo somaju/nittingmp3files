@@ -1,0 +1,823 @@
+<!--
+  prototype shell: the review chrome every prototype starts from.
+
+  Keep this comment in the prototype you grow from here: it is the contract,
+  and later turns work from that file rather than from this one.
+
+  Contract (extend product screens; keep the review shell):
+  - Product:  .sh-stage contains only end-user product UI. Keep review notes,
+               rationale, instructions, and approval controls in conversation.
+  - Screens:  <section data-screen="slug" data-title="Label"> inside .sh-stage.
+               The selector, arrow keys, and #hash routing build themselves.
+               Use one option per product destination or distinct surface,
+               named by its product role. Keep baselines, variants, comparison
+               labels, steps, indexes, and progress out of names and states.
+               Links may use href="#slug".
+  - States:   "Default" is automatic. A screen declares only representative
+               presets in data-states="Empty,Error". Use natural, screen-specific
+               names. Reserve presets for important multi-step results, forced
+               data or errors, or materially different structure; keep one-click
+               and transient states as interactions. Use data-when="Empty" on
+               preset-only elements. Call prototypeShell.setState("Name") on
+               entry and setState("Default") on exit, including when repeated
+               actions cross a preset condition.
+  - Viewport: "vp (m)" cycles full / 390 / 768. The 390 preset is a
+               fixed-height, internally scrolling phone frame. Start a
+               mobile-first prototype by adding class="sh-vp-390" to <body>
+               (or a bootstrap classList.add before the chrome script runs).
+  - Pinning:  keep in-frame bars (tab bars, CTAs) inside the phone with
+               position: sticky; position: fixed pins to the browser window.
+  - Tokens:   replace the project-tokens block with project tokens copied
+               verbatim. Map differing names to --background, --foreground, and
+               --font afterwards; replace network fonts with a system stack and
+               note that substitution. Without a design system, keep this
+               palette as the finished style. When the project ships dark
+               tokens, copy them under .sh-theme-dark, which the shell sets
+               on both the root element and body, so :root.sh-theme-dark and
+               body.sh-theme-dark work too. A .dark class or a
+               prefers-color-scheme media query copied verbatim would follow
+               the reviewer's system instead of the toggle.
+  - Theme:    the light / dark switch (t) changes the product surface only.
+               It appears only when a .sh-theme-dark rule declares dark tokens,
+               so a prototype without them carries no theme control. Prototypes
+               always load light; the review bar keeps its own dark styling in
+               both themes so it still reads as chrome.
+  - Placeholders: .wf-pic stands in for pictures the prototype has no real
+               files for. Use real text everywhere text belongs.
+
+  - Chrome:   Keep exactly the screen selector, selected-screen state selector,
+               viewport cycle, and theme toggle.
+
+  Self-contained by design: no build, no framework, no network.
+-->
+<meta charset="utf-8">
+<title>Prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* ── project tokens: copied from app/globals.css (font: system stack replaces Geist) ── */
+  :root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --radius: 0.625rem;
+    --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  }
+  .sh-theme-dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    color-scheme: dark;
+  }
+
+  /* ── review chrome (sh-*): keep; extend product styles elsewhere ── */
+  * { box-sizing: border-box }
+  body {
+    margin: 0; padding: 0 0 40px;
+    background: var(--background, #f6f6f6); color: var(--foreground, #3a3a3a);
+    font-family: var(--font, system-ui, sans-serif);
+  }
+  .sh-bar {
+    position: sticky; top: 0; z-index: 999;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding: 8px 12px; background: #191a1c; color: #d7d7d7;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .sh-bar b, .sh-control-label { color: #8a8f98; font-weight: 500 }
+  .sh-control { display: inline-flex; gap: 5px; align-items: center }
+  .sh-bar button {
+    border: 1px solid #3a3d42; background: none; color: inherit;
+    font: inherit; padding: 2px 9px; border-radius: 99px; cursor: pointer;
+  }
+  .sh-bar select {
+    width: 170px; border: 1px solid #3a3d42; background: #232428; color: inherit;
+    font: inherit; padding: 3px 28px 3px 9px; border-radius: 7px; cursor: pointer;
+    color-scheme: dark;
+  }
+  #sh-screen { width: 190px }
+  .sh-bar button.on { background: #d7d7d7; color: #191a1c; border-color: #d7d7d7 }
+  .sh-theme { display: inline-flex; border: 1px solid #3a3d42; border-radius: 99px; overflow: hidden }
+  .sh-theme button { border: 0; border-radius: 0; padding: 2px 10px }
+  .sh-spacer { flex: 1 }
+  .sh-stage { max-width: 1080px; margin: 0 auto; padding: 12px 16px 0 }
+  [hidden] { display: none !important }
+
+  /* viewport presets */
+  .sh-vp-390 .sh-stage {
+    max-width: 390px; background: var(--background, #f6f6f6);
+    border: 10px solid #191a1c; border-radius: 28px;
+    padding: 16px 12px; height: min(844px, calc(100dvh - 52px));
+    overflow-y: auto; margin-top: 12px; position: relative;
+  }
+  .sh-vp-768 .sh-stage {
+    max-width: 768px; border: 1px solid #c4c4c4; border-radius: 12px;
+    padding: 16px; margin-top: 12px;
+  }
+
+  /* placeholders */
+  .wf-pic  { border-radius: 4px; background:
+             repeating-linear-gradient(45deg, #e9e9e9, #e9e9e9 6px, #f2f2f2 6px, #f2f2f2 12px) }
+  .sh-theme-dark .wf-pic { background: repeating-linear-gradient(45deg,
+             color-mix(in srgb, var(--foreground) 16%, transparent) 0 6px,
+             color-mix(in srgb, var(--foreground) 8%, transparent) 6px 12px) }
+
+  /* ── product styles (shadcn-like semantics on project tokens) ── */
+  .sh-stage { font-size: 14px; line-height: 1.5; position: relative }
+  .page { display: flex; flex-direction: column; gap: 20px; padding-block: 8px 24px }
+  .page-head h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em }
+  .page-head p { margin: 4px 0 0; color: var(--muted-foreground) }
+  .card { background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.4); }
+  .card-h { padding: 16px 20px 0 }
+  .card-h h2 { margin: 0; font-size: 15px; font-weight: 600 }
+  .card-h p { margin: 2px 0 0; color: var(--muted-foreground); font-size: 13px }
+  .card-c { padding: 14px 20px 18px }
+  .muted { color: var(--muted-foreground) }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 14px;
+    border-radius: calc(var(--radius) * 0.8); border: 1px solid transparent; background: var(--primary); color: var(--primary-foreground);
+    font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap }
+  .btn:hover { opacity: .9 }
+  .btn:disabled { opacity: .45; cursor: not-allowed }
+  .btn.outline { background: var(--background); color: var(--foreground); border-color: var(--border) }
+  .btn.outline:hover { background: var(--accent); opacity: 1 }
+  .btn.ghost { background: transparent; color: var(--foreground) }
+  .btn.ghost:hover { background: var(--accent); opacity: 1 }
+  .btn.sm { height: 30px; padding: 0 10px; font-size: 13px }
+  .btn.icon { width: 40px; height: 40px; padding: 0; border-radius: 99px }
+  .input { height: 36px; width: 100%; padding: 0 12px; border-radius: calc(var(--radius) * 0.8); border: 1px solid var(--input);
+    background: transparent; color: var(--foreground); font: inherit }
+  .input:focus { outline: 2px solid var(--ring); outline-offset: 0 }
+  .badge { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 99px;
+    font-size: 12px; font-weight: 500; border: 1px solid var(--border); background: var(--secondary); color: var(--secondary-foreground); white-space: nowrap }
+  .badge.ok { background: var(--primary); color: var(--primary-foreground); border-color: transparent }
+  .badge.warn { background: transparent; color: var(--foreground); border-color: var(--foreground) }
+  .badge.bad { background: transparent; color: var(--destructive); border-color: var(--destructive) }
+  .alert { display: flex; gap: 10px; padding: 12px 14px; border-radius: calc(var(--radius) * 1.2); border: 1px solid var(--border); background: var(--card) }
+  .alert.bad { border-color: var(--destructive) }
+  .alert strong { display: block; font-weight: 600 }
+  .sep { height: 1px; background: var(--border); margin: 0; border: 0 }
+
+  /* folder rows */
+  .opts { display: flex; flex-direction: column; gap: 8px }
+  .opt { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; text-align: left; font: inherit; color: inherit;
+    background: transparent; border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.1); cursor: pointer }
+  .opt:hover:not(:disabled) { background: var(--accent) }
+  .opt:disabled { opacity: .5; cursor: not-allowed }
+  .opt[aria-checked="true"] { border-color: var(--foreground); box-shadow: 0 0 0 1px var(--foreground) }
+  .radio { width: 16px; height: 16px; border-radius: 99px; border: 1px solid var(--input); flex: none; display: grid; place-items: center }
+  .opt[aria-checked="true"] .radio::after { content: ""; width: 8px; height: 8px; border-radius: 99px; background: var(--foreground) }
+  .opt-main { flex: 1; min-width: 0 }
+  .opt-main b { font-weight: 500; display: block }
+  .opt-main span { display: block; color: var(--muted-foreground); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .row-end { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap }
+
+  /* dialog */
+  .overlay { position: absolute; inset: 0; z-index: 50; background: color-mix(in srgb, var(--foreground) 45%, transparent);
+    display: flex; align-items: flex-start; justify-content: center; padding: 56px 16px 16px; border-radius: inherit }
+  .dialog { width: min(520px, 100%); background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border);
+    border-radius: calc(var(--radius) * 1.4); box-shadow: 0 12px 40px rgb(0 0 0 / .25); padding: 20px; display: flex; flex-direction: column; gap: 14px }
+  .dialog h3 { margin: 0; font-size: 16px; font-weight: 600 }
+  .dialog p { margin: 0 }
+  .dialog-f { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap }
+  .crumbs { display: flex; gap: 8px }
+  .fs { border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.1); max-height: 240px; overflow-y: auto }
+  .fs button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; background: none; border: 0; border-bottom: 1px solid var(--border);
+    font: inherit; color: inherit; text-align: left; cursor: pointer }
+  .fs button:last-child { border-bottom: 0 }
+  .fs button:hover { background: var(--accent) }
+  .fs button[aria-selected="true"] { background: var(--accent); font-weight: 500 }
+  .fs .cnt { margin-left: auto; color: var(--muted-foreground); font-size: 12.5px }
+
+  /* progress */
+  .bar { height: 10px; border-radius: 99px; background: var(--secondary); overflow: hidden }
+  .bar > i { display: block; height: 100%; background: var(--primary); width: 0%; transition: width .25s }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px }
+  .stat { padding: 12px 14px; border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.1) }
+  .stat b { display: block; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums }
+  .stat span { color: var(--muted-foreground); font-size: 12.5px }
+  .feed { display: flex; flex-direction: column }
+  .feed div { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border) }
+  .feed div:last-child { border-bottom: 0 }
+  .feed .fn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+
+  /* results */
+  .results-grid > * { min-width: 0 }
+  .results-grid { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 16px; align-items: start }
+  .tabs { display: flex; gap: 4px; padding: 4px; background: var(--muted); border-radius: calc(var(--radius) * 1.1); overflow-x: auto }
+  .tabs button { flex: 1; height: 30px; padding: 0 10px; border: 0; border-radius: calc(var(--radius) * 0.8); background: transparent;
+    font: inherit; font-size: 13px; color: var(--muted-foreground); cursor: pointer; white-space: nowrap }
+  .tabs button[aria-selected="true"] { background: var(--background); color: var(--foreground); font-weight: 500; box-shadow: 0 1px 2px rgb(0 0 0 / .08) }
+  .list { display: flex; flex-direction: column; max-height: 640px; overflow-y: auto; padding: 6px }
+  .item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px; background: none; border: 0; border-radius: calc(var(--radius) * 0.9);
+    font: inherit; color: inherit; text-align: left; cursor: pointer }
+  .item:hover { background: var(--accent) }
+  .item[aria-selected="true"] { background: var(--accent); box-shadow: inset 0 0 0 1px var(--border) }
+  .item .t { flex: 1; min-width: 0 }
+  .item .t b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .item .t span { display: block; color: var(--muted-foreground); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .art { flex: none; border-radius: 8px; display: grid; place-items: center; color: #fff; font-weight: 700; overflow: hidden }
+  .art.s40 { width: 40px; height: 40px; font-size: 15px }
+  .art.s200 { width: 200px; height: 200px; font-size: 56px; border-radius: 14px }
+  .art.none { color: var(--muted-foreground); font-weight: 400 }
+  .detail { padding: 20px; display: flex; flex-direction: column; gap: 18px }
+  .d-top { display: flex; gap: 20px; align-items: flex-start }
+  .d-top .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px }
+  .d-top h2 { margin: 0; font-size: 20px; font-weight: 600; overflow-wrap: anywhere }
+  .kv { display: grid; grid-template-columns: 76px 1fr; gap: 6px 12px; margin: 0 }
+  .kv dt { color: var(--muted-foreground) }
+  .kv dd { margin: 0; overflow-wrap: anywhere }
+  .player { display: flex; align-items: center; gap: 12px }
+  .player .seek { flex: 1; height: 6px; border-radius: 99px; background: var(--secondary); overflow: hidden }
+  .player .seek i { display: block; height: 100%; width: 0; background: var(--primary) }
+  .lyrics { white-space: pre-line; max-height: 168px; overflow-y: auto; padding: 12px 14px; border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.1); background: var(--muted); line-height: 1.8 }
+  .h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--muted-foreground) }
+  .cands { display: flex; flex-direction: column; gap: 8px }
+  .cand { display: flex; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--border); border-radius: calc(var(--radius) * 1.1) }
+  .cand .t { flex: 1; min-width: 0 }
+  .cand .t b { display: block; font-weight: 500 }
+  .cand .t span { color: var(--muted-foreground); font-size: 12.5px }
+  table { width: 100%; border-collapse: collapse }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--border); vertical-align: middle }
+  th { font-weight: 500; color: var(--muted-foreground); font-size: 12.5px }
+  td label { display: flex; align-items: center; gap: 8px; cursor: pointer }
+  .tablewrap { overflow-x: auto }
+  .field { display: flex; flex-direction: column; gap: 6px }
+  .field label { font-weight: 500; font-size: 13px }
+  .field-row { display: flex; gap: 8px }
+  .empty { padding: 40px 16px; text-align: center; color: var(--muted-foreground) }
+  .top-line { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap }
+  .sum { display: flex; gap: 8px; flex-wrap: wrap }
+
+  @media (max-width: 760px) {
+    .results-grid { grid-template-columns: minmax(0, 1fr) }
+    .stats { grid-template-columns: repeat(2, 1fr) }
+    .d-top { flex-direction: column }
+    .art.s200 { width: 160px; height: 160px }
+  }
+  .sh-vp-390 .results-grid, .sh-vp-768 .results-grid { grid-template-columns: minmax(0, 1fr) }
+  .sh-vp-390 .stats { grid-template-columns: repeat(2, 1fr) }
+  .sh-vp-390 .d-top { flex-direction: column }
+  .sh-vp-390 .art.s200 { width: 160px; height: 160px }
+  .sh-vp-390 .list, .sh-vp-768 .list { max-height: 360px }
+  .sh-vp-390 .card-h, .sh-vp-390 .card-c { padding-inline: 14px }
+  .sh-vp-390 .detail { padding: 14px }
+  .sh-vp-390 .overlay { padding-top: 24px }
+</style>
+
+<header class="sh-bar">
+  <b>proto</b>
+  <label class="sh-control"><span class="sh-control-label">screen</span><select id="sh-screen"></select></label>
+  <span class="sh-spacer"></span>
+  <label class="sh-control"><span class="sh-control-label">state</span><select id="sh-state"></select></label>
+  <button id="sh-vp">vp: full (m)</button>
+  <div class="sh-theme" id="sh-theme" role="group" aria-label="theme (t)" hidden>
+    <button data-theme="light">light</button><button data-theme="dark">dark</button>
+  </div>
+</header>
+
+<main class="sh-stage">
+
+  <!-- ═══ 1. 폴더 선택 ═══ -->
+  <section data-screen="folder" data-title="폴더 선택">
+    <div class="page">
+      <div class="page-head">
+        <h1>MP3 정리</h1>
+        <p>폴더를 고르면 파일 이름과 태그를 정리해 새 폴더에 저장합니다. 원본 파일은 그대로 남습니다.</p>
+      </div>
+
+      <div class="card" data-component="Card">
+        <div class="card-h"><h2>정리할 폴더</h2><p>mp3가 들어 있는 폴더를 고르세요.</p></div>
+        <div class="card-c">
+          <div class="opts" id="in-opts" role="radiogroup" aria-label="정리할 폴더">
+            <button class="opt" data-component="Button" role="radio" aria-checked="false" data-path="~/Downloads/yt-music" data-name="yt-music">
+              <span class="radio"></span><span class="opt-main"><b>최근 사용 · yt-music</b><span class="mono">~/Downloads/yt-music</span></span><span class="badge">mp3 16개</span></button>
+            <button class="opt" data-component="Button" role="radio" aria-checked="false" data-path="~/Music" data-name="Music">
+              <span class="radio"></span><span class="opt-main"><b>음악</b><span class="mono">~/Music</span></span><span class="badge">mp3 16개</span></button>
+            <button class="opt" data-component="Button" role="radio" aria-checked="false" data-path="~/Downloads" data-name="Downloads">
+              <span class="radio"></span><span class="opt-main"><b>다운로드</b><span class="mono">~/Downloads</span></span><span class="badge">mp3 16개</span></button>
+            <button class="opt" data-component="Button" role="radio" aria-checked="false" disabled>
+              <span class="radio"></span><span class="opt-main"><b>바탕화면</b><span class="mono">~/Desktop</span></span><span class="badge">mp3 없음</span></button>
+          </div>
+          <div class="row-end" style="margin-top:12px">
+            <span class="muted" id="in-hint">목록에 없으면 직접 고를 수 있습니다.</span>
+            <button class="btn outline" id="in-browse" data-component="Button">직접 선택…</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" data-component="Card">
+        <div class="card-h"><h2>저장할 폴더</h2><p>정리된 파일이 만들어질 폴더입니다. 이미 같은 이름이 있으면 덮어쓰지 않고 번호를 붙입니다.</p></div>
+        <div class="card-c">
+          <div class="opts" id="out-opts" role="radiogroup" aria-label="저장할 폴더">
+            <button class="opt" data-component="Button" role="radio" aria-checked="true" data-out="beside">
+              <span class="radio"></span><span class="opt-main"><b>정리할 폴더 옆에 새 폴더 만들기</b><span class="mono" id="out-beside">정리할 폴더를 먼저 고르세요</span></span></button>
+            <button class="opt" data-component="Button" role="radio" aria-checked="false" data-out="music">
+              <span class="radio"></span><span class="opt-main"><b>음악 폴더 안의 “정리됨”</b><span class="mono">~/Music/정리됨</span></span></button>
+          </div>
+          <div class="row-end" style="margin-top:12px">
+            <span class="muted" id="out-hint">&nbsp;</span>
+            <button class="btn outline" id="out-browse" data-component="Button">직접 선택…</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="row-end">
+        <span class="muted" id="start-hint">정리할 폴더를 고르면 시작할 수 있습니다.</span>
+        <button class="btn" id="start" data-component="Button" disabled>변환 시작</button>
+      </div>
+    </div>
+
+    <div class="overlay" id="fs-overlay" hidden>
+      <div class="dialog" data-component="Dialog" role="dialog" aria-modal="true" aria-labelledby="fs-title">
+        <h3 id="fs-title">폴더 선택</h3>
+        <div class="crumbs">
+          <button class="btn outline sm" id="fs-up" data-component="Button" aria-label="위 폴더">↑ 위로</button>
+          <input class="input" id="fs-path" data-component="Input" aria-label="경로" value="~/Downloads">
+        </div>
+        <div class="fs" id="fs-list" role="listbox" aria-label="하위 폴더"></div>
+        <p class="muted" id="fs-sel">선택된 폴더: ~/Downloads</p>
+        <div class="dialog-f">
+          <button class="btn outline" id="fs-cancel" data-component="Button">취소</button>
+          <button class="btn" id="fs-ok" data-component="Button">이 폴더 선택</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 2. 변환 진행 ═══ -->
+  <section data-screen="progress" data-title="변환 진행" data-states="변환 완료">
+    <div class="page">
+      <div class="page-head">
+        <h1>변환하는 중</h1>
+        <p id="pg-sub">~/Downloads/yt-music → ~/Downloads/yt-music 정리됨</p>
+      </div>
+
+      <div class="card" data-component="Card">
+        <div class="card-c" style="display:flex;flex-direction:column;gap:14px">
+          <div class="row-end"><b id="pg-count">0 / 16곡</b><span class="muted" id="pg-now">시작하는 중…</span></div>
+          <div class="bar" data-component="Progress" role="progressbar" aria-valuemin="0" aria-valuemax="16" aria-valuenow="0" id="pg-bar"><i></i></div>
+          <div class="stats">
+            <div class="stat"><b id="st-ok">0</b><span>완료</span></div>
+            <div class="stat"><b id="st-rv">0</b><span>확인 필요</span></div>
+            <div class="stat"><b id="st-ng">0</b><span>처리 못함</span></div>
+            <div class="stat"><b id="st-left">16</b><span>남음</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" data-component="Card">
+        <div class="card-h"><h2>방금 처리한 곡</h2><p>원본 파일은 건드리지 않습니다.</p></div>
+        <div class="card-c"><div class="feed" id="pg-feed"></div></div>
+      </div>
+    </div>
+
+    <div class="overlay" data-when="변환 완료" hidden>
+      <div class="dialog" data-component="Dialog" role="dialog" aria-modal="true" aria-labelledby="done-title">
+        <h3 id="done-title">변환 완료</h3>
+        <p>16곡을 확인했습니다. 결과 폴더를 열어 두었습니다.</p>
+        <div class="sum">
+          <span class="badge ok" data-component="Badge">완료 10</span>
+          <span class="badge warn" data-component="Badge">확인 필요 3</span>
+          <span class="badge bad" data-component="Badge">처리 못함 3</span>
+        </div>
+        <p class="muted mono">~/Downloads/yt-music 정리됨</p>
+        <p class="muted">확인 필요한 곡과 처리하지 못한 곡은 출력 폴더에 아직 만들어지지 않았습니다. 결과 확인에서 마무리하세요.</p>
+        <div class="dialog-f"><button class="btn" id="done-go" data-component="Button">결과 확인</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 3. 결과 확인 ═══ -->
+  <section data-screen="results" data-title="결과 확인">
+    <div class="page">
+      <div class="top-line">
+        <div class="page-head">
+          <h1>결과 확인</h1>
+          <p class="mono">~/Downloads/yt-music 정리됨</p>
+        </div>
+        <div class="row-end" style="gap:8px">
+          <button class="btn outline" id="open-out" data-component="Button">출력 폴더 열기</button>
+          <button class="btn outline" id="restart" data-component="Button">다른 폴더 정리</button>
+        </div>
+      </div>
+
+      <div class="results-grid">
+        <div class="card" data-component="Card">
+          <div class="card-c" style="padding:12px 12px 0">
+            <div class="tabs" data-component="Tabs" role="tablist" id="r-tabs"></div>
+          </div>
+          <div class="list" id="r-list" role="listbox" aria-label="곡 목록"></div>
+        </div>
+        <div class="card detail" id="r-detail" data-component="Card"></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  const stage = document.querySelector('.sh-stage');
+  const screens = [...stage.querySelectorAll('[data-screen]')];
+  const screenSelect = document.getElementById('sh-screen');
+  const stateSelect = document.getElementById('sh-state');
+  const vpBtn = document.getElementById('sh-vp');
+  const themeCtl = document.getElementById('sh-theme');
+  const themeBtns = [...themeCtl.querySelectorAll('button')];
+  let current = null;
+  let currentStates = [];
+
+  screens.forEach(s => {
+    const option = document.createElement('option');
+    option.textContent = s.dataset.title || s.dataset.screen;
+    option.value = s.dataset.screen;
+    screenSelect.append(option);
+  });
+  screenSelect.onchange = () => show(screenSelect.value);
+
+  function show(slug) {
+    current = screens.find(s => s.dataset.screen === slug) || screens[0];
+    screens.forEach(s => s.hidden = s !== current);
+    screenSelect.value = current.dataset.screen;
+    history.replaceState(null, '', '#' + current.dataset.screen);
+    buildStates();
+  }
+
+  function buildStates() {
+    const declared = (current.dataset.states || '').split(',').map(x => x.trim()).filter(Boolean);
+    currentStates = ['Default', ...declared.filter(name => name !== 'Default')];
+    stateSelect.innerHTML = '';
+    currentStates.forEach(name => {
+      const option = document.createElement('option');
+      option.textContent = name;
+      option.value = name;
+      stateSelect.append(option);
+    });
+    applyState('Default');
+  }
+
+  function applyState(name) {
+    const active = currentStates.includes(name) ? name : 'Default';
+    current.querySelectorAll('[data-when]').forEach(el => {
+      el.hidden = !el.dataset.when.split(',').map(x => x.trim()).includes(active);
+    });
+    stateSelect.value = active;
+  }
+  stateSelect.onchange = () => applyState(stateSelect.value);
+
+  window.prototypeShell = {
+    showScreen: show,
+    setState: applyState,
+    getScreen: () => current?.dataset.screen,
+    getState: () => stateSelect.value
+  };
+
+  const VPS = ['full', '390', '768'];
+  let vp = VPS.find(v => document.body.classList.contains('sh-vp-' + v)) || 'full';
+  function applyVp() {
+    VPS.forEach(v => document.body.classList.toggle('sh-vp-' + v, v === vp && v !== 'full'));
+    vpBtn.textContent = 'vp: ' + vp + ' (m)';
+    vpBtn.classList.toggle('on', vp !== 'full');
+  }
+  vpBtn.onclick = () => { vp = VPS[(VPS.indexOf(vp) + 1) % VPS.length]; applyVp(); };
+  applyVp();
+
+  const hasDark = [...document.styleSheets].some(sheet => {
+    try {
+      return [...sheet.cssRules].some(rule => (rule.selectorText || '')
+        .split(',').some(part => /\.sh-theme-dark$/.test(part.trim())));
+    } catch { return false }
+  });
+  let dark = false;
+  function applyTheme() {
+    document.documentElement.classList.toggle('sh-theme-dark', dark);
+    document.body.classList.toggle('sh-theme-dark', dark);
+    themeBtns.forEach(b => b.classList.toggle('on', (b.dataset.theme === 'dark') === dark));
+  }
+  themeCtl.hidden = !hasDark;
+  themeBtns.forEach(b => b.onclick = () => { dark = b.dataset.theme === 'dark'; applyTheme(); });
+  applyTheme();
+
+  addEventListener('keydown', e => {
+    if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+    const i = screens.indexOf(current);
+    if (e.key === 'ArrowRight') show(screens[(i + 1) % screens.length].dataset.screen);
+    if (e.key === 'ArrowLeft') show(screens[(i - 1 + screens.length) % screens.length].dataset.screen);
+    if (e.key === 'm') vpBtn.click();
+    if (e.key === 't' && !themeCtl.hidden) { dark = !dark; applyTheme(); }
+  });
+
+  addEventListener('hashchange', () => show(location.hash.slice(1)));
+  show(location.hash.slice(1));
+</script>
+
+<script>
+/* ═════ product behavior (dummy data only) ═════ */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const sec = n => $(`[data-screen="${n}"]`);
+
+const toTop = () => { scrollTo(0, 0); $('.sh-stage').scrollTop = 0; };
+/* ── 1. folder selection ── */
+const fsTree = {
+  '~': ['Desktop', 'Documents', 'Downloads', 'Music'],
+  '~/Downloads': ['yt-music', '영상 모음', '문서'],
+  '~/Downloads/yt-music': [],
+  '~/Downloads/영상 모음': [],
+  '~/Downloads/문서': [],
+  '~/Music': ['iTunes', '정리됨'],
+  '~/Music/iTunes': [], '~/Music/정리됨': [],
+  '~/Desktop': [], '~/Documents': ['여행 사진', '일기']
+};
+let inPath = null, outMode = 'beside', outCustom = null, fsTarget = 'in', fsCur = '~/Downloads', fsPick = null;
+
+function setIn(path) {
+  inPath = path;
+  const name = path.split('/').pop();
+  $$('#in-opts .opt').forEach(o => o.setAttribute('aria-checked', String(o.dataset.path === path)));
+  $('#in-hint').textContent = path;
+  $('#out-beside').textContent = `${path.replace(/\/[^/]+$/, '')}/${name} 정리됨`;
+  $('#start').disabled = false;
+  $('#start-hint').textContent = 'mp3 16개를 찾았습니다. 원본은 그대로 남습니다.';
+}
+$('#in-opts').addEventListener('click', e => {
+  const b = e.target.closest('.opt'); if (!b || b.disabled) return;
+  setIn(b.dataset.path);
+});
+$('#out-opts').addEventListener('click', e => {
+  const b = e.target.closest('.opt'); if (!b) return;
+  outMode = b.dataset.out; outCustom = null;
+  $$('#out-opts .opt').forEach(o => o.setAttribute('aria-checked', String(o === b)));
+  $('#out-hint').innerHTML = '&nbsp;';
+});
+
+function fsRender() {
+  $('#fs-path').value = fsCur;
+  const kids = fsTree[fsCur] || [];
+  $('#fs-list').innerHTML = kids.length
+    ? kids.map(k => `<button role="option" aria-selected="${fsPick === fsCur + '/' + k}" data-k="${k}">📁 <span>${k}</span><span class="cnt">${k === 'yt-music' ? 'mp3 16개' : ''}</span></button>`).join('')
+    : '<div class="empty">하위 폴더가 없습니다.</div>';
+  $('#fs-sel').textContent = '선택된 폴더: ' + (fsPick || fsCur);
+}
+function openFs(target) {
+  fsTarget = target; fsCur = '~/Downloads'; fsPick = null;
+  $('#fs-title').textContent = target === 'in' ? '정리할 폴더 선택' : '저장할 폴더 선택';
+  $('#fs-overlay').hidden = false; fsRender(); toTop();
+}
+$('#in-browse').onclick = () => openFs('in');
+$('#out-browse').onclick = () => openFs('out');
+$('#fs-cancel').onclick = () => $('#fs-overlay').hidden = true;
+$('#fs-up').onclick = () => { if (fsCur !== '~') { fsCur = fsCur.replace(/\/[^/]+$/, '') || '~'; fsPick = null; fsRender(); } };
+$('#fs-list').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const p = fsCur + '/' + b.dataset.k;
+  if (fsPick === p) { fsCur = p; fsPick = null; } else fsPick = p;
+  fsRender();
+});
+$('#fs-path').addEventListener('change', e => { const v = e.target.value.trim(); if (fsTree[v]) { fsCur = v; fsPick = null; } fsRender(); });
+$('#fs-ok').onclick = () => {
+  const p = fsPick || fsCur;
+  if (fsTarget === 'in') {
+    $$('#in-opts .opt').forEach(o => o.setAttribute('aria-checked', 'false'));
+    inPath = p; $('#in-hint').textContent = p;
+    $('#out-beside').textContent = `${p.replace(/\/[^/]+$/, '')}/${p.split('/').pop()} 정리됨`;
+    $('#start').disabled = false; $('#start-hint').textContent = 'mp3 16개를 찾았습니다. 원본은 그대로 남습니다.';
+  } else {
+    outMode = 'custom'; outCustom = p;
+    $$('#out-opts .opt').forEach(o => o.setAttribute('aria-checked', 'false'));
+    $('#out-hint').textContent = '직접 선택: ' + p;
+  }
+  $('#fs-overlay').hidden = true;
+};
+function outPath() {
+  if (outMode === 'custom') return outCustom;
+  if (outMode === 'music') return '~/Music/정리됨';
+  return inPath.replace(/\/[^/]+$/, '') + '/' + inPath.split('/').pop() + ' 정리됨';
+}
+
+/* ── songs ── */
+const L = (...l) => l.join('\n');
+const songs = [
+ {id:1, orig:'하늘고래 - 푸른 새벽 (Official MV) [4K] 가사포함 www.mp3yt.example.mp3', title:'푸른 새벽', artist:'하늘고래', album:'새벽의 지도', genre:'인디 팝', year:2021, hue:210, status:'ok', lyrics:L('(예시 가사) 창문 너머로 번지는 푸른 빛','아직 깨지 않은 거리를 걸어','이름 없는 노래를 흥얼거리면','하루가 천천히 시작돼')},
+ {id:2, orig:'달빛정원_밤의 끝에서_320kbps_(1).mp3', title:'밤의 끝에서', artist:'달빛정원', album:'Garden Hours', genre:'발라드', year:2018, hue:265, status:'ok', lyrics:L('(예시 가사) 불 꺼진 방에 남은 온기','오래된 약속을 접어 두고','밤의 끝에서 너를 부르면','대답 대신 바람이 불어')},
+ {id:3, orig:'Lumen Park - Paper Planes (Lyric Video) HD.mp3', title:'Paper Planes', artist:'Lumen Park', album:'Small Sky', genre:'Pop', year:2020, hue:35, status:'ok', lyrics:L('(sample lyrics) Fold it twice and let it fly','Over rooftops, through the gray','Nobody knows where it lands','But the wind has made its way')},
+ {id:4, orig:'여름 끝자락 - 모래시계밴드 (고음질).mp3', title:'여름 끝자락', artist:'모래시계밴드', album:'Hourglass', genre:'록', year:2016, hue:20, status:'ok', lyrics:L('(예시 가사) 파도가 접어 둔 오후의 끝','젖은 샌들을 손에 들고서','돌아가는 길이 멀게 느껴져도','우리 아직 여름 안에 있어')},
+ {id:5, orig:'Neon Harbor - Midnight Drive (Audio).mp3', title:'Midnight Drive', artist:'Neon Harbor', album:'City Lines', genre:'Synthwave', year:2019, hue:300, status:'ok', lyrics:L('(sample lyrics) Headlights bleed on empty streets','The radio hums a tune we know','Take the long way, take it slow','Midnight has nowhere to go')},
+ {id:6, orig:'겨울 편지 [가사] - 별빛서랍.mp3', title:'겨울 편지', artist:'별빛서랍', album:'서랍 속의 계절', genre:'포크', year:2022, hue:190, status:'ok', lyrics:L('(예시 가사) 눈이 쌓인 우체통 앞에서','부치지 못한 문장을 만지작거려','봄이 오면 닿을 수 있을까','천천히 마음을 접어 넣어')},
+ {id:7, orig:'Maple Street Duo - Slow Mornings (Official Audio).mp3', title:'Slow Mornings', artist:'Maple Street Duo', album:'Kitchen Table', genre:'Acoustic', year:2017, hue:50, status:'ok', lyrics:L('(sample lyrics) Coffee steam on the window glass','Two old chairs and a song on the air','Nothing to do and nowhere to be','Slow mornings, you and me')},
+ {id:8, orig:'저녁노을 건너 - 오후세시.mp3', title:'저녁노을 건너', artist:'오후세시', album:'세시의 그림자', genre:'인디 록', year:2015, hue:10, status:'ok', lyrics:L('(예시 가사) 다리 위에 서서 해를 바라보면','하루가 천천히 식어 가고','건너지 못한 말들이','노을 속으로 번져')},
+ {id:9, orig:'Echo Garden - Glass Rivers (Official Audio) [Remastered].mp3', title:'Glass Rivers', artist:'Echo Garden', album:'Glass Rivers', genre:'Ambient', year:2023, hue:165, status:'ok', lyrics:L('(sample lyrics) Water folds like paper light','Every ripple, a quiet word','Hold the current in your hands','Let it show you where it’s heard')},
+ {id:10, orig:'봄날의 산책_초록나무_FULL.mp3', title:'봄날의 산책', artist:'초록나무', album:'나무 아래서', genre:'포크', year:2014, hue:130, status:'ok', lyrics:L('(예시 가사) 나뭇잎 사이로 새는 햇살','주머니 속에 넣은 작은 노래','천천히 걷다 보면','어느새 봄이 와 있었어')},
+ {id:11, orig:'소금 호수 - 파도소리.mp3', title:'소금 호수', artist:'파도소리', album:'', genre:'', year:'', hue:200, status:'review',
+  reason:'같은 제목의 곡이 여러 개라서 확신할 수 없습니다.',
+  cands:[{t:'소금 호수', a:'파도소리', al:'소금 호수 (정규 2집)', y:2019, g:'인디 포크', hue:200},{t:'소금 호수 (Live)', a:'파도소리', al:'Live at Hangang', y:2021, g:'인디 포크', hue:215},{t:'소금 호수', a:'파도소리밴드', al:'소금 호수 (싱글)', y:2016, g:'록', hue:180}],
+  lyrics:L('(예시 가사) 하얗게 마른 호수 위로','걸어가는 사람의 그림자','바람이 쓸고 간 자리마다','작은 소리가 남아 있어')},
+ {id:12, orig:'Midnight Letter - Aurora Lane.mp3', title:'Midnight Letter', artist:'Aurora Lane', album:'', genre:'', year:'', hue:320, status:'review',
+  reason:'원곡과 리마스터 버전이 모두 일치합니다.',
+  cands:[{t:'Midnight Letter', a:'Aurora Lane', al:'Letters (2012)', y:2012, g:'Pop', hue:320},{t:'Midnight Letter (2022 Remaster)', a:'Aurora Lane', al:'Letters (Deluxe)', y:2022, g:'Pop', hue:335}],
+  lyrics:L('(sample lyrics) Seal it up with trembling hands','Send it out before the dawn','Every word is a small lantern','Lit for someone far from home')},
+ {id:13, orig:'새벽 두 시 - 이름모를별.mp3', title:'새벽 두 시', artist:'이름모를별', album:'작은 별들', genre:'인디 포크', year:2017, hue:245, status:'conflict',
+  reason:'기존 태그와 검색 결과가 서로 다른 항목이 있습니다.',
+  fields:[
+   {k:'제목', cur:'새벽2시', found:'새벽 두 시', pick:null},
+   {k:'가수', cur:'이름모를별', found:'이름모를별', same:true},
+   {k:'앨범', cur:'', found:'작은 별들', fill:true},
+   {k:'장르', cur:'Pop', found:'인디 포크', pick:null},
+   {k:'출시년도', cur:'2014', found:'2017', pick:null}],
+  lyrics:L('(예시 가사) 모두가 잠든 시간에 깨어','식은 차를 두 손으로 감싸면','창밖의 별 몇 개가','나에게만 말을 걸어')},
+ {id:14, orig:'í•˜ëŠ˜ê³ ëž˜_ìƒˆë²½_07.mp3', status:'fail', kind:'garbled', hue:0,
+  reason:'파일명이 깨져 제목을 알 수 없습니다. 재생해 들어 보고 제목을 입력해 주세요.', lyrics:''},
+ {id:15, orig:'my_recording_final_v3 (copy).mp3', status:'fail', kind:'notfound', hue:0,
+  reason:'“my recording final v3”로 검색했지만 일치하는 곡을 찾지 못했습니다. 제목을 고치면 다시 검색합니다.', lyrics:''},
+ {id:16, orig:'비 오는 날의 기억.mp3', title:'비 오는 날의 기억', status:'fail', kind:'artist', hue:230,
+  reason:'곡은 찾았지만 가수 정보를 알 수 없습니다. 가수를 입력해 주세요.', album:'', genre:'', year:'', artist:'',
+  lyrics:L('(예시 가사) 유리창을 두드리는 소리','오래된 우산을 펼치면','한 사람의 이름이','빗방울마다 맺혀 있어')}
+];
+const hueBg = h => `linear-gradient(135deg, hsl(${h} 55% 52%), hsl(${(h + 40) % 360} 60% 38%))`;
+const fname = s => s.title && s.artist ? `${s.title}-${s.artist}.mp3` : null;
+const badgeFor = s => ({
+  ok: '<span class="badge ok" data-component="Badge">완료</span>',
+  review: '<span class="badge warn" data-component="Badge">확인 필요</span>',
+  conflict: '<span class="badge warn" data-component="Badge">확인 필요</span>',
+  fail: '<span class="badge bad" data-component="Badge">처리 못함</span>'}[s.status]);
+const artOf = (s, size) => (s.status === 'ok' || s.status === 'review' || s.status === 'conflict' || s.kind === 'artist')
+  ? `<div class="art ${size} wf-art" style="background:${hueBg(s.hue)}">${(s.title || '?')[0]}</div>`
+  : `<div class="art ${size} none wf-pic" aria-label="앨범아트 없음">♪</div>`;
+const counts = () => ({
+  all: songs.length, ok: songs.filter(s => s.status === 'ok').length,
+  need: songs.filter(s => s.status === 'review' || s.status === 'conflict').length,
+  fail: songs.filter(s => s.status === 'fail').length });
+
+/* ── 2. progress simulation ── */
+let pgTimer = null, pgN = 0, pgDone = false;
+const pgSec = sec('progress');
+function pgStats() {
+  const n = pgN, rows = songs.slice(0, n);
+  $('#pg-count').textContent = `${n} / 16곡`;
+  $('#pg-bar').setAttribute('aria-valuenow', n);
+  $('#pg-bar i').style.width = (n / 16 * 100) + '%';
+  $('#st-ok').textContent = rows.filter(s => s.status === 'ok').length;
+  $('#st-rv').textContent = rows.filter(s => s.status === 'review' || s.status === 'conflict').length;
+  $('#st-ng').textContent = rows.filter(s => s.status === 'fail').length;
+  $('#st-left').textContent = 16 - n;
+  $('#pg-now').textContent = n < 16 ? '분석: ' + songs[n].orig : '모두 확인했습니다';
+  $('#pg-feed').innerHTML = rows.slice(-5).reverse().map(s => `<div><span class="fn" title="${s.orig}">${fname(s) || s.orig}</span>${badgeFor(s)}</div>`).join('');
+}
+function pgFinish() {
+  clearInterval(pgTimer); pgTimer = null; pgN = 16; pgDone = true; pgStats();
+  if (window.prototypeShell.getState() !== '변환 완료') window.prototypeShell.setState('변환 완료');
+  toTop();
+}
+function pgStart() {
+  clearInterval(pgTimer); pgN = 0; pgDone = false; pgStats();
+  window.prototypeShell.setState('Default');
+  $('#pg-sub').textContent = `${inPath} → ${outPath()}`;
+  pgTimer = setInterval(() => { pgN++; pgStats(); if (pgN >= 16) pgFinish(); }, 380);
+}
+$('#start').onclick = () => { window.prototypeShell.showScreen('progress'); };
+new MutationObserver(() => {
+  if (!pgSec.hidden && !pgTimer && !pgDone) { if (!inPath) { inPath = '~/Downloads/yt-music'; } pgStart(); }
+}).observe(pgSec, {attributes: true, attributeFilter: ['hidden']});
+stateSelect.addEventListener('change', () => {
+  if (window.prototypeShell.getScreen() === 'progress' && stateSelect.value === '변환 완료' && !pgDone) {
+    clearInterval(pgTimer); pgTimer = null; pgN = 16; pgDone = true; pgStats();
+  }
+});
+$('#done-go').onclick = () => { window.prototypeShell.setState('Default'); window.prototypeShell.showScreen('results'); };
+
+/* ── 3. results ── */
+let filter = 'all', sel = songs.find(s => s.status === 'ok').id, playing = null, playT = null, playPos = 0, notice = null;
+const rSec = sec('results');
+function renderTabs() {
+  const c = counts();
+  const defs = [['all', '전체', c.all], ['ok', '완료', c.ok], ['need', '확인 필요', c.need], ['fail', '처리 못함', c.fail]];
+  $('#r-tabs').innerHTML = defs.map(([k, l, n]) => `<button role="tab" aria-selected="${filter === k}" data-k="${k}">${l} ${n}</button>`).join('');
+}
+function visible() {
+  return songs.filter(s => filter === 'all' || (filter === 'ok' && s.status === 'ok') ||
+    (filter === 'need' && (s.status === 'review' || s.status === 'conflict')) || (filter === 'fail' && s.status === 'fail'));
+}
+function renderList() {
+  const v = visible();
+  $('#r-list').innerHTML = v.length ? v.map(s => `
+    <button class="item" role="option" aria-selected="${s.id === sel}" data-id="${s.id}">
+      ${artOf(s, 's40')}
+      <span class="t"><b>${fname(s) || s.orig}</b><span>${s.status === 'ok' ? [s.album, s.genre, s.year].filter(Boolean).join(' · ') : (s.reason || '').slice(0, 40)}</span></span>
+      ${badgeFor(s)}</button>`).join('')
+    : '<div class="empty" data-component="Empty">이 분류에는 곡이 없습니다.</div>';
+}
+function playerHtml(s) {
+  const on = playing === s.id;
+  return `<div class="player"><button class="btn icon" data-act="play" data-component="Button" aria-label="${on ? '일시정지' : '재생'}">${on ? '❚❚' : '▶'}</button>
+    <div class="seek"><i style="width:${on ? playPos : 0}%"></i></div><span class="muted mono">${on ? 'playing' : '3:42'}</span></div>`;
+}
+function tagKv(s) {
+  return `<dl class="kv"><dt>제목</dt><dd>${s.title}</dd><dt>가수</dt><dd>${s.artist}</dd><dt>앨범</dt><dd>${s.album || '—'}</dd><dt>장르</dt><dd>${s.genre || '—'}</dd><dt>출시년도</dt><dd>${s.year || '—'}</dd></dl>`;
+}
+function renderDetail() {
+  const s = songs.find(x => x.id === sel); if (!s) return;
+  const note = notice ? `<div class="alert" data-component="Alert"><span>✓</span><div><strong>${notice}</strong></div></div>` : '';
+  const orig = `<div class="muted" style="font-size:12.5px">원본 파일명 · <span class="mono" style="overflow-wrap:anywhere">${s.orig}</span></div>`;
+  let body = '';
+  if (s.status === 'ok') {
+    body = `${note}<div class="d-top">${artOf(s, 's200')}<div class="meta">
+      <div><span class="badge ok" data-component="Badge">완료</span></div>
+      <h2>${fname(s)}</h2>${tagKv(s)}${orig}</div></div>
+      ${playerHtml(s)}
+      <div><p class="h4">가사</p><div class="lyrics">${s.lyrics}</div></div>`;
+  } else if (s.status === 'review') {
+    body = `${note}<div class="alert" data-component="Alert"><span>?</span><div><strong>어떤 곡인가요?</strong>${s.reason} 하나를 고르면 이 곡만 출력 폴더에 만들어집니다.</div></div>
+      ${orig}${playerHtml(s)}
+      <div><p class="h4">후보</p><div class="cands">${s.cands.map((c, i) => `
+        <div class="cand"><div class="art s40" style="background:${hueBg(c.hue)}">${c.t[0]}</div>
+        <div class="t"><b>${c.t}-${c.a}.mp3</b><span>${c.al} · ${c.g} · ${c.y}</span></div>
+        <button class="btn sm" data-act="cand" data-i="${i}" data-component="Button">이 곡으로 정리</button></div>`).join('')}</div></div>`;
+  } else if (s.status === 'conflict') {
+    const ready = s.fields.every(f => f.same || f.fill || f.pick);
+    body = `${note}<div class="alert" data-component="Alert"><span>?</span><div><strong>어느 값을 쓸까요?</strong>${s.reason} 다른 항목마다 쓸 값을 고르세요. 비어 있던 항목은 자동으로 채워집니다.</div></div>
+      ${orig}${playerHtml(s)}
+      <div class="tablewrap" data-component="Table"><table><thead><tr><th>항목</th><th>기존 태그</th><th>검색 결과</th></tr></thead><tbody>${s.fields.map((f, i) => f.same || f.fill ? `
+        <tr><td>${f.k}</td><td class="muted">${f.cur || '(비어 있음)'}</td><td>${f.found} <span class="badge">${f.same ? '같음' : '채움'}</span></td></tr>` : `
+        <tr><td>${f.k}</td>
+        <td><label><input type="radio" name="f${i}" data-act="pick" data-i="${i}" data-v="cur" ${f.pick === 'cur' ? 'checked' : ''}>${f.cur}</label></td>
+        <td><label><input type="radio" name="f${i}" data-act="pick" data-i="${i}" data-v="found" ${f.pick === 'found' ? 'checked' : ''}>${f.found}</label></td></tr>`).join('')}</tbody></table></div>
+      <div class="row-end"><span class="muted">${ready ? '선택을 마쳤습니다.' : '다른 항목을 모두 고르면 적용할 수 있습니다.'}</span>
+      <button class="btn" data-act="apply" data-component="Button" ${ready ? '' : 'disabled'}>선택한 값으로 정리</button></div>`;
+  } else {
+    const label = s.kind === 'artist' ? '가수' : '제목';
+    const ph = s.kind === 'artist' ? '예: 가수 이름' : '예: 노래 제목 또는 가수 - 제목';
+    body = `${note}<div class="alert bad" data-component="Alert"><span>!</span><div><strong>처리하지 못했습니다</strong>${s.reason}</div></div>
+      ${orig}${playerHtml(s)}
+      <div class="field"><label for="fx">${label} 입력</label><div class="field-row">
+        <input class="input" id="fx" data-component="Input" placeholder="${ph}" ${s.kind === 'notfound' ? 'value="my recording final v3"' : ''}>
+        <button class="btn" data-act="research" data-component="Button">${s.kind === 'artist' ? '적용' : '다시 검색'}</button></div>
+        <span class="muted" style="font-size:12.5px">입력하지 않으면 이 곡은 건너뛰고 처리하지 못한 목록에 남습니다.</span></div>`;
+  }
+  $('#r-detail').innerHTML = body;
+}
+function renderAll() { renderTabs(); renderList(); renderDetail(); }
+function stopPlay() { clearInterval(playT); playT = null; playing = null; playPos = 0; }
+function select(id) {
+  sel = id; notice = null; stopPlay(); renderAll();
+  const stacked = !document.body.className.includes('sh-vp-') ? matchMedia('(max-width: 760px)').matches : true;
+  if (stacked) $('#r-detail').scrollIntoView({block: 'start'});
+}
+function resolve(s, msg) {
+  s.status = 'ok';
+  notice = `${fname(s)} 을(를) 출력 폴더에 저장했습니다. ${msg || ''}`.trim();
+  renderAll();
+}
+$('#r-tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; filter = b.dataset.k; renderTabs(); renderList(); });
+$('#r-list').addEventListener('click', e => { const b = e.target.closest('.item'); if (b) select(+b.dataset.id); });
+$('#r-detail').addEventListener('click', e => {
+  const a = e.target.closest('[data-act]'); if (!a) return;
+  const s = songs.find(x => x.id === sel); const act = a.dataset.act;
+  if (act === 'play') {
+    if (playing === s.id) { stopPlay(); } else { stopPlay(); playing = s.id; playT = setInterval(() => { playPos = (playPos + 2) % 101; const i = $('.seek i', $('#r-detail')); if (i) i.style.width = playPos + '%'; }, 200); }
+    renderDetail();
+  } else if (act === 'cand') {
+    const c = s.cands[+a.dataset.i];
+    Object.assign(s, {title: c.t, artist: c.a, album: c.al, genre: c.g, year: c.y, hue: c.hue}); resolve(s);
+  } else if (act === 'pick') {
+    s.fields[+a.dataset.i].pick = a.dataset.v; renderDetail();
+  } else if (act === 'apply') {
+    s.fields.forEach(f => { const v = f.same || f.fill || f.pick === 'found' ? f.found : f.cur; const key = {'제목':'title','가수':'artist','앨범':'album','장르':'genre','출시년도':'year'}[f.k]; s[key] = v; }); resolve(s);
+  } else if (act === 'research') {
+    const v = ($('#fx').value || '').trim();
+    if (!v) { notice = null; renderDetail(); $('#fx').focus(); return; }
+    if (s.kind === 'artist') { s.artist = v; s.album = '비 오는 날의 기억'; s.genre = 'R&B'; s.year = 2019; resolve(s); }
+    else { Object.assign(s, {title: v.replace(/^.* - /, ''), artist: v.includes(' - ') ? v.split(' - ')[0] : '알 수 없는 가수', album: '싱글', genre: 'Pop', year: 2020, hue: 100, lyrics: '(예시 가사) 다시 검색해서 찾은 가사입니다.'}); resolve(s); }
+  }
+});
+$('#restart').onclick = () => { pgDone = false; window.prototypeShell.showScreen('folder'); };
+$('#open-out').onclick = () => { $('#open-out').textContent = '출력 폴더를 열었습니다 ✓'; setTimeout(() => $('#open-out').textContent = '출력 폴더 열기', 1600); };
+renderAll();
+</script>
