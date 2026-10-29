@@ -93,6 +93,7 @@ async function finish(
   deps: SongDeps,
   candidate: SongCandidate,
   choices: ConflictChoices | undefined,
+  replaceFileName?: string,
 ): Promise<SongOutcome> {
   const file = await entry.getFile();
   const { tags: existing, picture: existingPicture } = await readTags(file);
@@ -104,7 +105,13 @@ async function finish(
   const tags = mergeTags(existing, candidate, choices ?? {});
   if (!tags.title || !tags.artist) return { status: "failed", reason: "no-artist", title: tags.title };
   const fileName = songFileName(tags.title, tags.artist);
-  if (await output.has(fileName)) return { status: "skipped", fileName };
+  if ((await output.has(fileName)) && fileName !== replaceFileName) {
+    return { status: "skipped", fileName };
+  }
+  const remove = replaceFileName !== fileName ? output.remove : undefined;
+  if (replaceFileName && replaceFileName !== fileName && !remove) {
+    throw new Error("이 폴더에서는 기존 결과 파일을 교체할 수 없습니다.");
+  }
   if (!tags.lyrics) {
     const lyrics =
       (await deps.lyrics(tags.title, tags.artist)) ??
@@ -120,6 +127,7 @@ async function finish(
   tags.title = songTitle(tags.title, tags.artist);
   const data = await writeTags(file, tags, picture ?? undefined);
   await output.write(fileName, data);
+  if (remove && replaceFileName) await remove(replaceFileName);
   return {
     status: "ok",
     fileName,
@@ -189,8 +197,9 @@ export function chooseCandidate(
   output: OutputFolder,
   deps: SongDeps,
   candidate: SongCandidate,
+  replaceFileName?: string,
 ): Promise<SongOutcome> {
-  return finish(entry, output, deps, candidate, undefined);
+  return finish(entry, output, deps, candidate, undefined, replaceFileName);
 }
 
 export function resolveConflicts(
@@ -199,8 +208,9 @@ export function resolveConflicts(
   deps: SongDeps,
   candidate: SongCandidate,
   choices: ConflictChoices,
+  replaceFileName?: string,
 ): Promise<SongOutcome> {
-  return finish(entry, output, deps, candidate, choices);
+  return finish(entry, output, deps, candidate, choices, replaceFileName);
 }
 
 export async function runOrganizer(options: {
@@ -244,13 +254,20 @@ export async function saveManual(
   deps: SongDeps,
   values: ManualValues,
   artworkUrl?: string,
+  replaceFileName?: string,
 ): Promise<SongOutcome> {
   const title = values.title.trim();
   const artist = values.artist.trim();
   if (!title || !artist) return { status: "failed", reason: "no-artist", title: title || undefined };
 
   const fileName = songFileName(title, artist);
-  if (await output.has(fileName)) return { status: "skipped", fileName };
+  if ((await output.has(fileName)) && fileName !== replaceFileName) {
+    return { status: "skipped", fileName };
+  }
+  const remove = replaceFileName !== fileName ? output.remove : undefined;
+  if (replaceFileName && replaceFileName !== fileName && !remove) {
+    throw new Error("이 폴더에서는 기존 결과 파일을 교체할 수 없습니다.");
+  }
 
   const file = await entry.getFile();
   const { tags: existing, picture: existingPicture } = await readTags(file);
@@ -264,6 +281,7 @@ export async function saveManual(
 
   const data = await writeTags(file, tags, picture ?? undefined);
   await output.write(fileName, data);
+  if (remove && replaceFileName) await remove(replaceFileName);
   return {
     status: "ok",
     fileName,

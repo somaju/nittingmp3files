@@ -20,7 +20,8 @@ export type DetailActions = {
   choose: (candidate: SongCandidate) => Promise<void>
   resolve: (candidate: SongCandidate, choices: ConflictChoices) => Promise<void>
   retry: (hint: { title?: string; artist?: string }) => Promise<void>
-  save: (values: ManualValues, artworkUrl?: string) => Promise<void>
+  save: (values: ManualValues, artworkUrl?: string) => Promise<boolean>
+  reselect?: () => Promise<void>
 }
 
 type Props = { record: SongRecord; actions: DetailActions; notice: string | null; busy: boolean }
@@ -59,45 +60,7 @@ function Body({
   busy: boolean
 }) {
   if (outcome.status === "ok") {
-    const t = outcome.tags
-    return (
-      <>
-        <div className="flex flex-col gap-5 sm:flex-row">
-          <Art
-            picture={outcome.picture}
-            label={outcome.fileName}
-            className="size-40 text-5xl sm:size-52"
-          />
-          <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-            <div>
-              <Badge>완료</Badge>
-            </div>
-            <h2 className="font-heading text-xl font-semibold break-words" data-testid="detail-name">
-              {outcome.fileName}
-            </h2>
-            <dl className="grid grid-cols-[4.5rem_1fr] gap-x-3 gap-y-1.5">
-              {(["title", "artist", "album", "genre", "year"] as FieldKey[]).map((f) => (
-                <div key={f} className="contents">
-                  <dt className="text-muted-foreground">{FIELD_LABEL[f]}</dt>
-                  <dd className="break-words">{t[f] ?? "—"}</dd>
-                </div>
-              ))}
-            </dl>
-            <Original name={entry.name} />
-          </div>
-        </div>
-        <Player getFile={() => entry.getFile()} />
-        <div>
-          <p className="mb-2 text-sm font-semibold text-muted-foreground">가사</p>
-          <div
-            className="max-h-44 overflow-y-auto rounded-lg border bg-muted p-3 leading-7 whitespace-pre-line"
-            data-testid="lyrics"
-          >
-            {t.lyrics ?? "찾은 가사가 없습니다."}
-          </div>
-        </div>
-      </>
-    )
+    return <CompletedPanel entry={entry} outcome={outcome} actions={actions} busy={busy} />
   }
 
   if (outcome.status === "skipped") {
@@ -123,6 +86,105 @@ function Body({
 }
 
 type ReviewOutcome = Extract<SongOutcome, { status: "review" }>
+
+function CompletedPanel({
+  entry,
+  outcome,
+  actions,
+  busy,
+}: {
+  entry: SongRecord["entry"]
+  outcome: Extract<SongOutcome, { status: "ok" }>
+  actions: DetailActions
+  busy: boolean
+}) {
+  const [editing, setEditing] = useState(false)
+  const tags = outcome.tags
+  const artist = tags.artist ?? ""
+  const taggedTitle = tags.title ?? ""
+  const initial: SongCandidate = {
+    title: taggedTitle.endsWith(` - ${artist}`)
+      ? taggedTitle.slice(0, -(` - ${artist}`).length)
+      : taggedTitle,
+    artist,
+    album: tags.album,
+    genre: tags.genre,
+    year: tags.year,
+    source: "itunes",
+  }
+
+  if (editing) {
+    return (
+      <ManualForm
+        entry={entry}
+        initial={initial}
+        initialLyrics={tags.lyrics}
+        busy={busy}
+        onSave={actions.save}
+        onSaved={() => setEditing(false)}
+        onCancel={() => setEditing(false)}
+      />
+    )
+  }
+
+  return (
+    <>
+      <div className="flex flex-col gap-5 sm:flex-row">
+        <Art
+          picture={outcome.picture}
+          label={outcome.fileName}
+          className="size-40 text-5xl sm:size-52"
+        />
+        <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge>완료</Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => setEditing(true)}
+              data-testid="edit-mode"
+            >
+              직접 편집
+            </Button>
+            {actions.reselect && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => actions.reselect?.()}
+              >
+                후보 다시 선택
+              </Button>
+            )}
+          </div>
+          <h2 className="font-heading text-xl font-semibold break-words" data-testid="detail-name">
+            {outcome.fileName}
+          </h2>
+          <dl className="grid grid-cols-[4.5rem_1fr] gap-x-3 gap-y-1.5">
+            {(["title", "artist", "album", "genre", "year"] as FieldKey[]).map((f) => (
+              <div key={f} className="contents">
+                <dt className="text-muted-foreground">{FIELD_LABEL[f]}</dt>
+                <dd className="break-words">{tags[f] ?? "—"}</dd>
+              </div>
+            ))}
+          </dl>
+          <Original name={entry.name} />
+        </div>
+      </div>
+      <Player getFile={() => entry.getFile()} />
+      <div>
+        <p className="mb-2 text-sm font-semibold text-muted-foreground">가사</p>
+        <div
+          className="max-h-44 overflow-y-auto rounded-lg border bg-muted p-3 leading-7 whitespace-pre-line"
+          data-testid="lyrics"
+        >
+          {tags.lyrics ?? "찾은 가사가 없습니다."}
+        </div>
+      </div>
+    </>
+  )
+}
 
 function ReviewPanel({
   entry,
@@ -150,7 +212,17 @@ function ReviewPanel({
   }
   return (
     <>
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        {actions.reselect && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => actions.reselect?.()}
+          >
+            후보 목록으로 돌아가기
+          </Button>
+        )}
         <Button variant="outline" size="sm" onClick={() => setEditing(true)} data-testid="edit-mode">
           직접 편집
         </Button>
@@ -222,14 +294,18 @@ return (
 function ManualForm({
   entry,
   initial,
+  initialLyrics,
   busy,
   onSave,
+  onSaved,
   onCancel,
 }: {
   entry: SongRecord["entry"]
   initial: SongCandidate
+  initialLyrics?: string
   busy: boolean
   onSave: DetailActions["save"]
+  onSaved?: () => void
   onCancel: () => void
 }) {
   const [title, setTitle] = useState(initial.title)
@@ -237,7 +313,7 @@ function ManualForm({
   const [album, setAlbum] = useState(initial.album ?? "")
   const [genre, setGenre] = useState(initial.genre ?? "")
   const [year, setYear] = useState(initial.year ? String(initial.year) : "")
-  const [lyrics, setLyrics] = useState("")
+  const [lyrics, setLyrics] = useState(initialLyrics ?? "")
   const valid = title.trim() !== "" && artist.trim() !== ""
   const fields: [string, string, (v: string) => void, string][] = [
     ["제목", title, setTitle, "edit-title"],
@@ -293,8 +369,8 @@ function ManualForm({
         <Button
           disabled={!valid || busy}
           data-testid="manual-save"
-          onClick={() =>
-            onSave(
+          onClick={async () => {
+            const saved = await onSave(
               {
                 title,
                 artist,
@@ -305,7 +381,8 @@ function ManualForm({
               },
               initial.artworkUrl
             )
-          }
+            if (saved) onSaved?.()
+          }}
         >
           이대로 저장
         </Button>

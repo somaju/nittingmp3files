@@ -335,6 +335,48 @@ describe("saveManual", () => {
     expect(output.files.size).toBe(1);
   });
 
+  it("완료된 곡을 편집하면 이전 결과 파일을 새 이름으로 교체한다", async () => {
+    const { entry } = await oneEntry("원본.mp3");
+    const oldFileName = "이전 제목 - 가수.mp3";
+    const output = memoryOutputFolder("정리됨", [oldFileName]);
+
+    const outcome = await saveManual(
+      entry,
+      output,
+      deps(),
+      { title: "새 제목", artist: "가수", lyrics: "편집한 가사" },
+      undefined,
+      oldFileName
+    );
+
+    expect(outcome).toMatchObject({ status: "ok", fileName: "새 제목 - 가수.mp3" });
+    expect([...output.files.keys()]).toEqual(["새 제목 - 가수.mp3"]);
+    expect((await readTags(output.files.get("새 제목 - 가수.mp3")!)).tags).toMatchObject({
+      title: "새 제목 - 가수",
+      artist: "가수",
+      lyrics: "편집한 가사",
+    });
+  });
+
+  it("완료된 곡 편집 시 다른 곡의 파일명과 충돌하면 기존 파일을 유지한다", async () => {
+    const { entry } = await oneEntry("원본.mp3");
+    const oldFileName = "이전 제목 - 가수.mp3";
+    const collision = "이미 있는 제목 - 가수.mp3";
+    const output = memoryOutputFolder("정리됨", [oldFileName, collision]);
+
+    const outcome = await saveManual(
+      entry,
+      output,
+      deps(),
+      { title: "이미 있는 제목", artist: "가수" },
+      undefined,
+      oldFileName
+    );
+
+    expect(outcome).toEqual({ status: "skipped", fileName: collision });
+    expect([...output.files.keys()]).toEqual([oldFileName, collision]);
+  });
+
   it("제목 태그와 파일명이 같고 가수 이름은 한 번만 들어간다", async () => {
     const { entry } = await oneEntry("a.mp3");
     const output = memoryOutputFolder();

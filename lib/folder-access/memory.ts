@@ -37,5 +37,8 @@ export function memoryOutputFolder(
     async write(fileName, data) {
       files.set(fileName, data);
     },
+    async remove(fileName) {
+      files.delete(fileName);
+    },
   };
 }

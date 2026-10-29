@@ -12,6 +12,7 @@ export type OutputFolder = {
   name: string;
   has(fileName: string): Promise<boolean>;
   write(fileName: string, data: Blob): Promise<void>;
+  remove?(fileName: string): Promise<void>;
 };
 
 // 브라우저의 폴더 접근 기능(File System Access API) 중 이 앱이 쓰는 부분만 적은 형태.
@@ -22,6 +23,7 @@ export type DirectoryHandleLike = {
     name: string,
     options?: { create?: boolean },
   ): Promise<FileHandleLike>;
+  removeEntry?(name: string): Promise<void>;
   queryPermission?(descriptor: { mode: "read" | "readwrite" }): Promise<PermissionState>;
   requestPermission?(descriptor: { mode: "read" | "readwrite" }): Promise<PermissionState>;
 };
@@ -72,6 +74,10 @@ export function outputFolderFrom(handle: DirectoryHandleLike): OutputFolder {
       const writable = await file.createWritable();
       await writable.write(data);
       await writable.close();
+    },
+    async remove(fileName) {
+      if (!handle.removeEntry) throw new Error("이 폴더에서는 파일을 삭제할 수 없습니다.");
+      await handle.removeEntry(fileName);
     },
   };
 }
