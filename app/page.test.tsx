@@ -1,16 +1,20 @@
-import { render, screen } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { render, screen } from "@testing-library/react"
+import { afterEach, expect, test, vi } from "vitest"
 
-import Home from "@/app/page";
+import Home from "@/app/page"
 
-test("홈 화면은 시작 안내 제목과 배포 링크를 보여준다", () => {
-  render(<Home />);
+afterEach(() => vi.unstubAllGlobals())
 
-  expect(
-    screen.getByRole("heading", { level: 1, name: /To get started/i })
-  ).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /Deploy Now/i })).toHaveAttribute(
-    "href",
-    expect.stringContaining("vercel.com/new")
-  );
-});
+test("홈 화면은 폴더를 고르기 전에는 변환을 시작할 수 없다", () => {
+  vi.stubGlobal("showDirectoryPicker", vi.fn())
+  render(<Home />)
+
+  expect(screen.getByRole("heading", { level: 1, name: "MP3 정리" })).toBeInTheDocument()
+  expect(screen.getByTestId("start")).toBeDisabled()
+})
+
+test("폴더 접근을 지원하지 않는 브라우저에서는 안내를 보여준다", async () => {
+  render(<Home />)
+
+  expect(await screen.findByTestId("unsupported")).toHaveTextContent("Chrome이나 Edge")
+})

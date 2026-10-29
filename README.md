@@ -1,10 +1,13 @@
-# Claude Code Playbook Template
+# MP3 정리
 
-[![Claude Hunt](https://img.shields.io/badge/Claude_Hunt-강의-000000)](https://www.claude-hunt.com)
-[![Docs](https://img.shields.io/badge/docs-claude--hunt-2563eb)](https://docs.claude-hunt.com)
+인터넷에서 받은 mp3 폴더를 고르면 곡을 찾아 파일 안의 제목 태그와 파일명을 `노래이름 - 가수이름`으로 통일하고, 빈 태그(앨범, 장르, 출시년도, 앨범아트, 가사)를 채워 지정한 폴더에 저장하는 웹서비스입니다.
 
-> [Claude Hunt](https://www.claude-hunt.com) 강의용 Next.js 16 + React 19 템플릿.
-> 사용법과 워크플로우 문서는 [docs.claude-hunt.com](https://docs.claude-hunt.com)에서 확인하세요.
+- 음원 파일은 서버에 올라가지 않습니다. 브라우저가 폴더를 직접 읽고 씁니다. 서버는 곡 정보 검색(iTunes Search, MusicBrainz, LRCLIB) 요청만 대신 보냅니다.
+- 원본 폴더의 파일은 바꾸지 않고, 결과는 사용자가 고른 저장 폴더에만 만듭니다.
+- 폴더 접근 기능이 필요해 **Chrome, Edge 같은 Chromium 계열 브라우저**에서만 쓸 수 있습니다(Safari, Firefox 미지원).
+- 제품 정의는 [PRODUCT.md](PRODUCT.md), 구현 범위는 [docs/specs/mp3-organizer/spec.md](docs/specs/mp3-organizer/spec.md)를 보세요.
+
+> 이 저장소는 [Claude Hunt](https://www.claude-hunt.com) 강의용 Next.js 템플릿에서 시작했습니다. 템플릿의 워크플로우 문서는 [docs.claude-hunt.com](https://docs.claude-hunt.com)에 있습니다.
 
 ## 기술 스택
 
@@ -31,6 +34,23 @@ bun dev
 | `bun run test` | Vitest 단위/컴포넌트 테스트 1회 실행 |
 | `bun run test:watch` | Vitest watch 모드 |
 | `bun run test:e2e` | Playwright E2E 테스트 실행 |
+
+## 배포
+
+Next.js 앱이라 [Vercel](https://vercel.com)에 그대로 올릴 수 있습니다. 별도 설정 파일이 필요 없습니다.
+
+1. Vercel에서 이 저장소를 가져옵니다(Import Project). 프레임워크는 Next.js로 자동 인식됩니다.
+2. 빌드 명령은 기본값(`next build`)을 쓰고, 환경 변수는 필요 없습니다. 사용자에게 API 키를 요구하지 않는 서비스만 쓰기 때문입니다.
+3. 배포 후 Chrome이나 Edge로 접속해 폴더를 골라 확인합니다.
+
+다른 Node.js 호스팅에서는 `bun run build` 후 `bun start`로 실행합니다. 서버가 `itunes.apple.com`, `musicbrainz.org`, `lrclib.net`, `coverartarchive.org`에 접속할 수 있어야 합니다.
+
+운영할 때 알아 둘 점입니다.
+
+- 폴더 접근은 보안 컨텍스트가 필요해서 `https` 주소(또는 `localhost`)에서만 동작합니다. Vercel은 기본으로 `https`입니다.
+- MusicBrainz는 초당 1건 요청 제한이 있습니다. 앱은 서버 인스턴스마다 요청 간격을 두지만, 사용자가 늘면 여러 인스턴스와 여러 사용자의 요청이 합쳐져 제한에 걸릴 수 있습니다. MusicBrainz는 iTunes에서 곡이 정해지지 않을 때만 부릅니다.
+- 진행 상태와 처리하지 못한 목록은 사용자의 브라우저에만 저장됩니다. 서버에는 저장하지 않습니다.
+- 빌드는 `next/font/google`로 Google Fonts를 받아 오므로 빌드 환경이 `fonts.googleapis.com`에 접속할 수 있어야 합니다.
 
 ## 테스트
 
